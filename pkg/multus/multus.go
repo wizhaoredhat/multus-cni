@@ -370,7 +370,6 @@ func DelegateAdd(exec invoke.Exec, kubeClient *k8s.ClientInfo, pod *v1.Pod, dele
 	var result cnitypes.Result
 	var err error
 	if delegate.ConfListPlugin {
-		// TODO: why are we passing bytes here? don't we have a better representation of it?
 		result, err = conflistAdd(rt, delegate.Bytes, &delegate.CNINetworkConfigList, multusNetconf, exec)
 		if err != nil {
 			return nil, err
@@ -987,10 +986,13 @@ func CmdDel(args *skel.CmdArgs, exec invoke.Exec, kubeClient *k8s.ClientInfo) er
 	for _, v := range in.Delegates {
 		if v.ConfListPlugin && v.ConfList.CNIVersion == "" && in.CNIVersion != "" {
 			v.ConfList.CNIVersion = in.CNIVersion
-			v.Bytes, err = json.Marshal(v.ConfList)
+			// Inject cniVersion onto the raw bytes losslessly. Marshaling the
+			// structured ConfList (types.NetConfList) here would strip
+			// CNI-specific fields (e.g. calico's kubeconfig) and break DEL.
+			v.Bytes, err = types.InjectCNIVersionInConfList(v.Bytes, in.CNIVersion)
 			if err != nil {
 				// error happen but continue to delete
-				logging.Errorf("Multus: failed to marshal delegate %q config: %v", v.Name, err)
+				logging.Errorf("Multus: failed to inject cniVersion into delegate %q config: %v", v.Name, err)
 			}
 		}
 	}
